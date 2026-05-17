@@ -92,16 +92,6 @@ function readExpr(type: any, optional?: boolean): string {
   if (n === "float32") return `r.readFloat32()`;
   if (n === "float64" || n === "float" || n === "decimal") return `r.readFloat64()`;
   if (n === "bytes") return `r.readBytes()`;
-  if (isArrayType(type)) {
-    const elem = arrayElementType(type)!;
-    const elemTs = typeToTs(elem);
-    return `(() => { const arr: ${elemTs}[] = []; r.beginArray(); while (r.hasNextElement()) { arr.push(${readExpr(elem)}); } r.endArray(); return arr; })()`;
-  }
-  if (isRecordType(type)) {
-    const elem = recordElementType(type)!;
-    const elemTs = typeToTs(elem);
-    return `(() => { const record: Record<string, ${elemTs}> = {}; r.beginObject(); while (r.hasNextField()) { const key = r.readFieldName(); record[key] = ${readExpr(elem)}; } r.endObject(); return record; })()`;
-  }
   if (type.kind === "Model" && type.name) {
     if (optional) return `(r.isNull() ? r.readNull() : decode${type.name}(r)) ?? undefined`;
     return `decode${type.name}(r)`;
@@ -112,6 +102,31 @@ function readExpr(type: any, optional?: boolean): string {
     return `decode${type.name}(r)`;
   }
   return `r.readString()`;
+}
+
+let tsFieldReadCounter = 0;
+function generateFieldRead(L: string[], f: { name: string; type: any; optional: boolean }, varName: string, indent: string): void {
+  if (isArrayType(f.type)) {
+    const elem = arrayElementType(f.type)!;
+    const elemTs = typeToTs(elem);
+    const tmp = `_tmp${tsFieldReadCounter++}`;
+    L.push(`${indent}const ${tmp}: ${elemTs}[] = [];`);
+    L.push(`${indent}r.beginArray();`);
+    L.push(`${indent}while (r.hasNextElement()) { ${tmp}.push(${readExpr(elem)}); }`);
+    L.push(`${indent}r.endArray();`);
+    L.push(`${indent}${varName} = ${tmp};`);
+  } else if (isRecordType(f.type)) {
+    const elem = recordElementType(f.type)!;
+    const elemTs = typeToTs(elem);
+    const tmp = `_tmp${tsFieldReadCounter++}`;
+    L.push(`${indent}const ${tmp}: Record<string, ${elemTs}> = {};`);
+    L.push(`${indent}r.beginObject();`);
+    L.push(`${indent}while (r.hasNextField()) { ${tmp}[r.readFieldName()] = ${readExpr(elem)}; }`);
+    L.push(`${indent}r.endObject();`);
+    L.push(`${indent}${varName} = ${tmp};`);
+  } else {
+    L.push(`${indent}${varName} = ${readExpr(f.type, f.optional)};`);
+  }
 }
 
 function emitModelFunctions(m: Model, L: string[]): void {
@@ -159,14 +174,18 @@ function emitModelFunctions(m: Model, L: string[]): void {
   } else {
     L.push(`  const obj: Partial<${m.name}> = {};`);
   }
+  tsFieldReadCounter = 0;
   L.push(`  r.beginObject();`);
   L.push(`  while (r.hasNextField()) {`);
   L.push(`    switch (r.readFieldName()) {`);
   for (const f of fields) {
-    if (hasUnionField) {
-      L.push(`      case "${f.name}": ${tsField(f)} = ${readExpr(f.type, f.optional)}; break;`);
+    const vn = hasUnionField ? tsField(f) : `obj.${tsField(f)}`;
+    if (isArrayType(f.type) || isRecordType(f.type)) {
+      L.push(`      case "${f.name}":`);
+      generateFieldRead(L, f, vn, `        `);
+      L.push(`        break;`);
     } else {
-      L.push(`      case "${f.name}": obj.${tsField(f)} = ${readExpr(f.type, f.optional)}; break;`);
+      L.push(`      case "${f.name}": ${vn} = ${readExpr(f.type, f.optional)}; break;`);
     }
   }
   L.push(`      default: r.skip();`);
