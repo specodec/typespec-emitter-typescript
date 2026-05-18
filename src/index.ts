@@ -109,7 +109,7 @@ function generateFieldRead(L: string[], f: { name: string; type: any; optional: 
   if (isArrayType(f.type)) {
     const elem = arrayElementType(f.type)!;
     const elemTs = typeToTs(elem);
-    const tmp = `_tmp${tsFieldReadCounter++}`;
+    const tmp = `_tmp`;
     L.push(`${indent}const ${tmp}: ${elemTs}[] = [];`);
     L.push(`${indent}r.beginArray();`);
     L.push(`${indent}while (r.hasNextElement()) { ${tmp}.push(${readExpr(elem)}); }`);
@@ -118,7 +118,7 @@ function generateFieldRead(L: string[], f: { name: string; type: any; optional: 
   } else if (isRecordType(f.type)) {
     const elem = recordElementType(f.type)!;
     const elemTs = typeToTs(elem);
-    const tmp = `_tmp${tsFieldReadCounter++}`;
+    const tmp = `_tmp`;
     L.push(`${indent}const ${tmp}: Record<string, ${elemTs}> = {};`);
     L.push(`${indent}r.beginObject();`);
     L.push(`${indent}while (r.hasNextField()) { ${tmp}[r.readFieldName()] = ${readExpr(elem)}; }`);
