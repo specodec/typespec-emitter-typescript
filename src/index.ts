@@ -159,82 +159,84 @@ function generateFieldRead(f: { name: string; type: any; optional: boolean }): {
   return { stmts: [], value: readExpr(f.type) };
 }
 
-function emitModelFunctions(m: Model, L: string[]): void {
+function generateModelCode(m: Model): string {
   if (!m.name) return;
+  const lines: string[] = [];
   const fields = extractFields(m);
   const required = fields.filter((f) => !f.optional);
   const optional = fields.filter((f) => f.optional);
   const tsField = (f: FieldInfo) => safeFieldName("typescript", toCamelCase(f.name));
 
-  L.push(`export function write${m.name}(w: SpecWriter, obj: ${m.name}): void {`);
+  lines.push(`export function write${m.name}(w: SpecWriter, obj: ${m.name}): void {`);
   if (optional.length === 0) {
-    L.push(`  w.beginObject(${fields.length});`);
+    lines.push(`  w.beginObject(${fields.length});`);
   } else {
-    L.push(`  let fieldCount = ${required.length};`);
-    for (const f of optional) L.push(`  if (obj.${tsField(f)} !== undefined) fieldCount++;`);
-    L.push(`  w.beginObject(fieldCount);`);
+    lines.push(`  let fieldCount = ${required.length};`);
+    for (const f of optional) lines.push(`  if (obj.${tsField(f)} !== undefined) fieldCount++;`);
+    lines.push(`  w.beginObject(fieldCount);`);
   }
   for (const f of fields) {
     if (f.optional) {
-      L.push(
+      lines.push(
         `  if (obj.${tsField(f)} !== undefined) { w.writeField("${f.name}"); ${writeExpr(f.type, `obj.${tsField(f)}`)}; }`,
       );
     } else {
-      L.push(`  w.writeField("${f.name}"); ${writeExpr(f.type, `obj.${tsField(f)}`)};`);
+      lines.push(`  w.writeField("${f.name}"); ${writeExpr(f.type, `obj.${tsField(f)}`)};`);
     }
   }
-  L.push(`  w.endObject();`);
-  L.push(`}`);
-  L.push("");
+  lines.push(`  w.endObject();`);
+  lines.push(`}`);
+  lines.push("");
 
-  L.push(`export function decode${m.name}(r: SpecReader): ${m.name} {`);
+  lines.push(`export function decode${m.name}(r: SpecReader): ${m.name} {`);
   const hasUnionField = fields.some((f) => !f.optional && isUnionType(f.type));
   if (hasUnionField) {
     for (const f of fields) {
       const fn = tsField(f);
       if (f.optional) {
-        L.push(`  let ${fn}: ${typeToTs(f.type)} | undefined;`);
+        lines.push(`  let ${fn}: ${typeToTs(f.type)} | undefined;`);
       } else if (isUnionType(f.type)) {
         const undefCls = `${(f.type as any).name}Undefined`;
-        L.push(`  let ${fn}: ${typeToTs(f.type)} = new ${undefCls}(SpecUndefined.instance);`);
+        lines.push(`  let ${fn}: ${typeToTs(f.type)} = new ${undefCls}(SpecUndefined.instance);`);
       } else {
-        L.push(`  let ${fn}: ${typeToTs(f.type)} = ${defaultForType(f.type)};`);
+        lines.push(`  let ${fn}: ${typeToTs(f.type)} = ${defaultForType(f.type)};`);
       }
     }
   } else {
-    L.push(`  const obj: Partial<${m.name}> = {};`);
+    lines.push(`  const obj: Partial<${m.name}> = {};`);
   }
   tsFieldReadCounter = 0;
-  L.push(`  r.beginObject();`);
-  L.push(`  while (r.hasNextField()) {`);
-  L.push(`    switch (r.readFieldName()) {`);
+  lines.push(`  r.beginObject();`);
+  lines.push(`  while (r.hasNextField()) {`);
+  lines.push(`    switch (r.readFieldName()) {`);
   for (const f of fields) {
     const vn = hasUnionField ? tsField(f) : `obj.${tsField(f)}`;
     const result = generateFieldRead(f);
     if (result.stmts.length > 0) {
-      L.push(`      case "${f.name}": {`);
+      lines.push(`      case "${f.name}": {`);
       for (const stmt of result.stmts) {
-        L.push(`        ${stmt}`);
+        lines.push(`        ${stmt}`);
       }
-      L.push(`        ${vn} = ${result.value};`);
-      L.push(`        break;`);
-      L.push(`      }`);
+      lines.push(`        ${vn} = ${result.value};`);
+      lines.push(`        break;`);
+      lines.push(`      }`);
     } else {
-      L.push(`      case "${f.name}": ${vn} = ${result.value}; break;`);
+      lines.push(`      case "${f.name}": ${vn} = ${result.value}; break;`);
     }
   }
-  L.push(`      default: r.skip();`);
-  L.push(`    }`);
-  L.push(`  }`);
-  L.push(`  r.endObject();`);
+  lines.push(`      default: r.skip();`);
+  lines.push(`    }`);
+  lines.push(`  }`);
+  lines.push(`  r.endObject();`);
   if (hasUnionField) {
     const args = fields.map((f) => `${tsField(f)}: ${tsField(f)}`).join(", ");
-    L.push(`  return { ${args} };`);
+    lines.push(`  return { ${args} };`);
   } else {
-    L.push(`  return obj as ${m.name};`);
+    lines.push(`  return obj as ${m.name};`);
   }
-  L.push(`}`);
-  L.push("");
+  lines.push(`}`);
+  lines.push("");
+  return lines.join("\n");
 }
 
 function defaultForType(type: any): string {
@@ -251,7 +253,7 @@ function defaultForType(type: any): string {
   return `null as any`;
 }
 
-function emitEnum(e: EnumInfo, L: string[]): void {
+function generateEnumCode(e: EnumInfo, L: string[]): void {
   L.push(`export enum ${e.name} {`);
   for (const m of e.members) {
     L.push(`  ${m.name} = ${m.value},`);
@@ -260,7 +262,7 @@ function emitEnum(e: EnumInfo, L: string[]): void {
   L.push("");
 }
 
-function emitUnionType(u: UnionInfo, L: string[]): void {
+function generateUnionCode(u: UnionInfo, L: string[]): void {
   L.push(`export abstract class ${u.name} {}`);
   L.push(``);
   for (const v of u.variants) {
@@ -272,9 +274,7 @@ function emitUnionType(u: UnionInfo, L: string[]): void {
   const undefCls = `${u.name}Undefined`;
   L.push(`export class ${undefCls} extends ${u.name} { constructor(public readonly value: SpecUndefined) { super(); } }`);
   L.push(``);
-}
 
-function emitUnionFunctions(u: UnionInfo, L: string[]): void {
   L.push(`export function write${u.name}(w: SpecWriter, obj: ${u.name}): void {`);
   L.push(`  w.beginObject(1);`);
   for (const v of u.variants) {
@@ -395,8 +395,6 @@ export async function $onEmit(context: EmitContext<EmitterOptions>) {
   }
   if (xrefNs.size > 0) L.push("");
 
-    for (const e of svc.enums) emitEnum(e, L);
-
     for (const m of svc.models) {
       if (!m.name) continue;
       const fields = extractFields(m);
@@ -408,11 +406,9 @@ export async function $onEmit(context: EmitContext<EmitterOptions>) {
       L.push("");
     }
 
-    for (const u of svc.unions) emitUnionType(u, L);
-
-    for (const m of svc.models) emitModelFunctions(m, L);
-
-    for (const u of svc.unions) emitUnionFunctions(u, L);
+    for (const e of svc.enums) generateEnumCode(e, L);
+    for (const m of svc.models) L.push(generateModelCode(m));
+    for (const u of svc.unions) generateUnionCode(u, L);
 
     for (const m of svc.models) {
       if (!m.name) continue;
