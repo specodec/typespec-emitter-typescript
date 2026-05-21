@@ -30,7 +30,7 @@ function dottedPathToKebab(path: string): string {
 
 const pascalVariant = (v: UnionVariantInfo) => v.name.charAt(0).toUpperCase() + v.name.slice(1);
 
-function typeToTs(type: any): string {
+export function typeToTs(type: any): string {
   const n = scalarName(type);
   if (n === "string") return "string";
   if (n === "boolean") return "boolean";
@@ -60,7 +60,7 @@ function typeToTs(type: any): string {
   return "unknown";
 }
 
-function writeExpr(type: any, varExpr: string): string {
+export function writeExpr(type: any, varExpr: string): string {
   const n = scalarName(type);
   if (n === "string") return `w.writeString(${varExpr})`;
   if (n === "boolean") return `w.writeBool(${varExpr})`;
@@ -85,7 +85,7 @@ function writeExpr(type: any, varExpr: string): string {
   return `w.writeString(String(${varExpr}))`;
 }
 
-function readExpr(type: any): string {
+export function readExpr(type: any): string {
   const n = scalarName(type);
   if (n === "string") return `r.readString()`;
   if (n === "boolean") return `r.readBool()`;
@@ -103,7 +103,7 @@ function readExpr(type: any): string {
 }
 
 let tsFieldReadCounter = 0;
-function generateFieldRead(f: { name: string; type: any; optional: boolean }): { stmts: string[]; value: string } {
+export function generateFieldRead(f: { name: string; type: any; optional: boolean }): { stmts: string[]; value: string } {
   if (isArrayType(f.type)) {
     const elem = arrayElementType(f.type)!;
     const elemTs = typeToTs(elem);
@@ -159,7 +159,7 @@ function generateFieldRead(f: { name: string; type: any; optional: boolean }): {
   return { stmts: [], value: readExpr(f.type) };
 }
 
-function generateModelCode(m: Model): string {
+export function generateModelCode(m: Model): string {
   if (!m.name) return;
   const lines: string[] = [];
   const fields = extractFields(m);
@@ -239,7 +239,7 @@ function generateModelCode(m: Model): string {
   return lines.join("\n");
 }
 
-function defaultForType(type: any): string {
+export function defaultForType(type: any): string {
   const n = scalarName(type);
   if (n === "string") return `""`;
   if (n === "boolean") return `false`;
@@ -253,7 +253,7 @@ function defaultForType(type: any): string {
   return `null as any`;
 }
 
-function generateEnumCode(e: EnumInfo, L: string[]): void {
+export function generateEnumCode(e: EnumInfo, L: string[]): void {
   L.push(`export enum ${e.name} {`);
   for (const m of e.members) {
     L.push(`  ${m.name} = ${m.value},`);
